@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elnätspriser Göteborg</title>
+<style>
+:root{
+  --bg:#f5f7f9; --surface:#ffffff; --text:#15202b; --muted:#5b6978; --line:#e1e6eb;
+  --accent:#0b6bcb; --bar:#0b6bcb; --bar-low:#9db4cc;
+  --ok:#14703f; --ok-soft:#e1f3e8; --warn:#8a5700; --warn-soft:#fcefd0; --gray:#566371; --gray-soft:#e9edf1;
+  --env:#14703f;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e1317; --surface:#161d23; --text:#e8edf1; --muted:#95a3b0; --line:#28323b;
+    --accent:#5aa7f0; --bar:#5aa7f0; --bar-low:#3b566f;
+    --ok:#5cc88e; --ok-soft:#14301f; --warn:#e8b64f; --warn-soft:#352a10; --gray:#a3b0bb; --gray-soft:#222b33;
+    --env:#5cc88e;
+  }
+}
+body.env-uat{--env:#b26a00}
+@media (prefers-color-scheme: dark){ body.env-uat{--env:#e8b64f} }
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header.top{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);border-top:4px solid var(--env)}
+.wrap{max-width:1160px;margin:0 auto;padding:0 16px}
+.bar-row{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;padding:10px 0}
+h1{font-size:18px;margin:0 auto 0 0;font-weight:650;letter-spacing:-.01em}
+h1 small{display:block;font-size:12px;font-weight:400;color:var(--muted);letter-spacing:0}
+.ctl{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ctl>label{font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:6px 12px;font:inherit;color:var(--muted);cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--accent);color:#fff}
+.seg button[data-env=uat][aria-pressed=true]{background:#b26a00}
+.seg button[data-env=prod][aria-pressed=true]{background:#14703f}
+input,select,.btn{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.btn{cursor:pointer}
+.btn:hover,.seg button:hover:not([aria-pressed=true]){background:var(--gray-soft)}
+input[type=search]{width:190px}
+.infoline{font-size:12px;color:var(--muted);padding:0 0 10px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.envtag{font-weight:650;color:var(--env)}
+
+main{max-width:1160px;margin:0 auto;padding:16px}
+h2.group{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:22px 0 10px;font-weight:650}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,430px),1fr));gap:14px;align-items:start}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card.expired{opacity:.7}
+.card h3{margin:0;font-size:16px;line-height:1.3}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+.badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--gray-soft);color:var(--gray)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:500}
+.meta{font-size:12px;color:var(--muted);margin:4px 0 0}
+.desc{font-size:13px;color:var(--muted);margin:6px 0 0}
+.note{font-size:12px;color:var(--warn);background:var(--warn-soft);border-radius:6px;padding:4px 8px;margin:8px 0 0}
+.sec{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+.sec h4{margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}
+.row{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:14px}
+.row .val{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .val small,.row .sub{display:block;font-size:11px;color:var(--muted)}
+.row .sub{margin-top:1px}
+.row.sum{border-top:1px dashed var(--line);margin-top:3px;padding-top:5px;font-weight:600}
+.hint{font-size:12px;color:var(--muted);margin:4px 0 0}
+.chart-title{font-size:12px;color:var(--muted);margin:8px 0 0;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.chart{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;align-items:end;height:84px;margin-top:6px;border-bottom:1px solid var(--line)}
+.bar{background:var(--bar);border-radius:2px 2px 0 0;min-height:2px;height:var(--h)}
+.bar.zero,.bar.none{background:var(--bar-low);opacity:.55}
+.bar.now{outline:2px solid var(--text);outline-offset:1px}
+.axis{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;font-size:10px;color:var(--muted);text-align:center;margin-top:2px}
+details{margin-top:6px;font-size:12px;color:var(--muted)}
+details summary{cursor:pointer}
+.hours{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:2px 10px;margin-top:6px;font-variant-numeric:tabular-nums}
+.hours span b{font-weight:500;color:var(--text)}
+pre{max-height:220px;overflow:auto;background:var(--gray-soft);padding:8px;border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all}
+.state{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted)}
+.state.err{color:var(--text);border-color:#c0392b;text-align:left}
+.state.err b{color:#c0392b}
+footer{max-width:1160px;margin:8px auto 40px;padding:0 16px;font-size:12px;color:var(--muted)}
+footer a{color:var(--accent)}
+@media (max-width:560px){ input[type=search]{width:100%} h1{width:100%} }
+</style>
+</head>
+<body class="env-prod">
+<header class="top">
+  <div class="wrap">
+    <div class="bar-row">
+      <h1>Elnätspriser Göteborg<small>Göteborg Energi Nät – tariffer och timpriser</small></h1>
+      <div class="ctl" role="group" aria-label="Miljö">
+        <div class="seg">
+          <button type="button" data-env="uat" aria-pressed="false">UAT</button>
+          <button type="button" data-env="prod" aria-pressed="true">Prod</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label for="date">Datum</label>
+        <button class="btn" id="prev" title="Föregående dag" aria-label="Föregående dag">‹</button>
+        <input type="date" id="date">
+        <button class="btn" id="next" title="Nästa dag" aria-label="Nästa dag">›</button>
+        <button class="btn" id="todayBtn">Idag</button>
+      </div>
+      <div class="ctl">
+        <label for="filter">Visa</label>
+        <select id="filter">
+          <option value="active">Gäller &amp; kommande</option>
+          <option value="now">Gäller valt datum</option>
+          <option value="all">Alla (inkl. utgångna)</option>
+        </select>
+        <input type="search" id="q" placeholder="Sök namn / produktkod" aria-label="Sök">
+      </div>
+      <div class="ctl">
+        <div class="seg" role="group" aria-label="Moms">
+          <button type="button" data-vat="inc" aria-pressed="true">Inkl. moms</button>
+          <button type="button" data-vat="ex" aria-pressed="false">Exkl. moms</button>
+        </div>
+        <button class="btn" id="refresh" title="Hämta om från API:t" aria-label="Hämta om">↻</button>
+      </div>
+    </div>
+    <div class="infoline" id="info"></div>
+  </div>
+</header>
+
+<main id="list"><div class="state">Hämtar tariffer…</div></main>
+
+<footer>
+  Data från Göteborg Energi Nät via
+  <a href="https://github.com/RI-SE/Eltariff-API" target="_blank" rel="noopener">Eltariff-API</a>.
+  API:t är under utveckling – priserna är inte juridiskt bindande, kontrollera alltid mot Göteborg Energi.
+  Källkod: <a href="https://github.com/mapaq/grid-tariff-client" target="_blank" rel="noopener">github.com/mapaq/grid-tariff-client</a>.
+</footer>
+
+<script>
+'use strict';
+const TZ = 'Europe/Stockholm';
+const HOSTS = { uat: 'api.uat.goteborgenergi.cloud', prod: 'api.goteborgenergi.cloud' };
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const nf = (v, max = 2, min = 0) => new Intl.NumberFormat('sv-SE', { maximumFractionDigits: max, minimumFractionDigits: min }).format(v);
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v){ try { localStorage.setItem(k, v); } catch {} }
+};
+
+/* ---------- datum & tid ---------- */
+const dhFmt = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' });
+function localDH(d){
+  const p = Object.fromEntries(dhFmt.formatToParts(d).map(x => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, hour: +p.hour };
+}
+const today = () => localDH(new Date()).date;
+function addDays(date, n){ const d = new Date(date + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function isoDow(date){ const d = new Date(date + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; }
+const d10 = s => (s ? String(s).slice(0, 10) : null);
+function inPeriod(date, vp){
+  if (!vp) return true;
+  const f = d10(vp.fromIncluding), t = d10(vp.toExcluding);
+  return (!f || date >= f) && (!t || date < t);
+}
+function clampDate(date, vp){
+  if (!vp) return date;
+  const f = d10(vp.fromIncluding), t = d10(vp.toExcluding);
+  if (f && date < f) return f;
+  if (t && date >= t) return addDays(t, -1);
+  return date;
+}
+function periodText(vp){
+  if (!vp) return '';
+  const f = d10(vp.fromIncluding), t = d10(vp.toExcluding);
+  return `${f || '…'} – ${t ? addDays(t, -1) : '…'}`;
+}
+function dateLabel(date){
+  return new Date(date + 'T12:00:00Z').toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+const toMin = s => { const [h, m] = String(s).split(':'); return (+h) * 60 + (+m || 0); };
+
+/* ---------- kalendermönster & tidsindelning ---------- */
+function patMatch(ref, date, pats){
+  const p = pats[ref];
+  if (!p) return false;
+  if (p.days?.length && p.days.includes(isoDow(date))) return true;
+  if (p.dates?.length && (p.dates.includes(date) || p.dates.includes(date.slice(5)))) return true;
+  return false;
+}
+function calOK(cpr, date, pats){
+  const inc = cpr?.include || [], exc = cpr?.exclude || [];
+  const okInc = inc.length === 0 || inc.some(r => patMatch(r, date, pats));
+  return okInc && !exc.some(r => patMatch(r, date, pats));
+}
+function activeAt(c, date, hour, pats){
+  const rps = c.recurringPeriods;
+  if (!rps || !rps.length) return true;
+  return rps.some(rp => (rp.activePeriods || []).some(ap => {
+    const f = toMin(ap.fromIncluding), t0 = toMin(ap.toExcluding), t = t0 === 0 ? 1440 : t0;
+    return f <= hour * 60 && hour * 60 < t && calOK(ap.calendarPatternReferences, date, pats);
+  }));
+}
+function isFlat(c){
+  const rps = c.recurringPeriods;
+  if (!rps || !rps.length) return true;
+  return rps.every(rp => (rp.activePeriods || []).some(ap =>
+    toMin(ap.fromIncluding) === 0 && toMin(ap.toExcluding) === 0 && !(ap.calendarPatternReferences?.exclude || []).length));
+}
+const CAL_NAMES = { weekdays: 'vardagar', weekends: 'helger', holidays: 'helgdagar' };
+function scheduleText(c){
+  const rps = c.recurringPeriods;
+  if (!rps || !rps.length) return 'Hela dygnet, alla dagar';
+  const parts = [];
+  rps.forEach(rp => (rp.activePeriods || []).forEach(ap => {
+    const f = ap.fromIncluding.slice(0, 5), t = ap.toExcluding.slice(0, 5);
+    let s = (f === '00:00' && t === '00:00') ? 'Hela dygnet' : `${f}–${t === '00:00' ? '24:00' : t}`;
+    const inc = ap.calendarPatternReferences?.include || [], exc = ap.calendarPatternReferences?.exclude || [];
+    if (inc.includes('weekdays') && inc.includes('weekends')) s += ', alla dagar';
+    else if (inc.length) s += ' ' + inc.map(r => CAL_NAMES[r] || r).join(' & ');
+    if (exc.length) s += ` (ej ${exc.map(r => CAL_NAMES[r] || r).join(', ')})`;
+    parts.push(s);
+  }));
+  return parts.join(' · ');
+}
+
+/* ---------- hämtning ---------- */
+const state = { env: 'prod', vat: 'inc', date: today(), filter: 'active', q: '' };
+{
+  const qp = new URLSearchParams(location.search);
+  const e = qp.get('env') || store.get('env');
+  if (e === 'uat' || e === 'prod') state.env = e;
+  if (store.get('vat') === 'ex') state.vat = 'ex';
+}
+const cache = {};            // env -> { tariffs, patterns, info }
+const priceCache = new Map(); // env|path -> Promise
+let renderToken = 0;
+
+// Datakälla: 'snapshot' = data/*.json som GitHub Actions hämtat (GitHub Pages),
+// 'live' = anrop via proxyn i server.py (lokal körning). Väljs automatiskt: finns data/manifest.json => snapshot.
+let SOURCE = null, manifest = null;
+async function detectSource(){
+  if (SOURCE) return SOURCE;
+  if (new URLSearchParams(location.search).get('source') === 'live') return (SOURCE = 'live');
+  try {
+    const r = await fetch('data/manifest.json', { cache: 'no-store' });
+    if (r.ok) { manifest = await r.json(); return (SOURCE = 'snapshot'); }
+  } catch {}
+  return (SOURCE = 'live');
+}
+const dataUrl = p => SOURCE === 'snapshot' ? `data/${state.env}/${p}.json` : `/api/${state.env}/${p}`;
+// Filnamn för en prissatt komponent i snapshot-läget. Måste matcha price_key() i scripts/fetch_data.py.
+function priceKey(c){
+  const q = new URL(c.url || '/prices', 'http://x').searchParams;
+  return (q.get('product') || q.get('componentId') || 'c-' + c.id).replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
+async function getJson(url){
+  const r = await fetch(url, { cache: 'no-store' });
+  const text = await r.text();
+  let j = null; try { j = JSON.parse(text); } catch {}
+  if (!r.ok) throw new Error((j && (j.detail || j.title || j.error)) || `HTTP ${r.status}`);
+  if (j === null) throw new Error('Svaret var inte giltig JSON');
+  return j;
+}
+
+async function load(force = false){
+  const env = state.env;
+  if (force) {
+    delete cache[env]; SOURCE = null; manifest = null;
+    for (const k of [...priceCache.keys()]) if (k.startsWith(env + '|')) priceCache.delete(k);
+  }
+  await detectSource();
+  if (cache[env]) return render();
+  $('#list').innerHTML = `<div class="state">Hämtar tariffer${SOURCE === 'live' ? ' från ' + esc(HOSTS[env]) : ''}…</div>`;
+  $('#info').innerHTML = '';
+  try {
+    const m = manifest?.envs?.[env];
+    if (SOURCE === 'snapshot' && m && m.ok === false) {
+      throw new Error(`Senaste hämtningen av ${env.toUpperCase()}-data misslyckades${m.error ? ': ' + m.error : ''}`);
+    }
+    const [t, info] = await Promise.all([getJson(dataUrl('tariffs')), getJson(dataUrl('info')).catch(() => null)]);
+    const patterns = Object.fromEntries((t.calendarPatterns || []).map(p => [p.reference, p]));
+    cache[env] = { tariffs: t.tariffs || [], patterns, info };
+  } catch (e) {
+    if (state.env !== env) return;
+    const hint = location.protocol === 'file:'
+      ? '<br><br>Sidan måste startas via servern: kör <code>python3 server.py</code> och öppna <code>http://localhost:8000</code>.' : '';
+    $('#list').innerHTML = `<div class="state err"><b>Kunde inte hämta tariffer (${esc(env.toUpperCase())}).</b><br>${esc(e.message)}${hint}<br><br><button class="btn" id="retry">Försök igen</button></div>`;
+    $('#retry').onclick = () => load(true);
+    return;
+  }
+  if (state.env === env) render();
+}
+
+/* ---------- priser (timpris via /prices) ---------- */
+function pricePath(c, date){
+  const u = new URL(c.url || '/prices', 'http://x');
+  if (!c.url) u.searchParams.set('componentId', c.id);
+  u.searchParams.set('date', date);
+  return u.pathname.replace(/^\/+/, '').replace(/^gridtariff\/v0\//, '') + '?' + u.searchParams.toString();
+}
+function fetchPrices(c, date){
+  // snapshot: en fil per komponent med hela hämtade perioden (sidan filtrerar på datum); live: /prices för valt datum
+  const url = SOURCE === 'snapshot' ? `data/${state.env}/prices/${priceKey(c)}.json` : `/api/${state.env}/${pricePath(c, date)}`;
+  const key = `${state.env}|${url}`;
+  if (!priceCache.has(key)) {
+    const p = getJson(url);
+    p.catch(() => priceCache.delete(key));
+    priceCache.set(key, p);
+  }
+  return priceCache.get(key);
+}
+// Tolerant tolkning av /prices-svaret: letar upp objekt med starttid + pris var de än ligger.
+function pointFrom(o){
+  const vp = o.validPeriod || o.period || o;
+  const from = vp.fromIncluding ?? vp.from ?? vp.start ?? vp.startTime ?? o.timestamp ?? o.time;
+  const to = vp.toExcluding ?? vp.to ?? vp.end ?? vp.endTime ?? null;
+  const pr = o.price !== undefined && o.price !== null ? o.price : o;
+  let ex, inc;
+  if (typeof pr === 'number') { ex = inc = pr; }
+  else if (typeof o.value === 'number') { ex = inc = o.value; }
+  else { ex = pr.priceExVat ?? o.priceExVat; inc = pr.priceIncVat ?? o.priceIncVat; }
+  if (from == null || (ex == null && inc == null)) return null;
+  const f = new Date(from);
+  if (isNaN(f)) return null;
+  const t = to ? new Date(to) : null;
+  return { from: f, to: t && !isNaN(t) ? t : null, ex: ex ?? null, inc: inc ?? null };
+}
+function extractPoints(json){
+  const out = [];
+  (function walk(n){
+    if (Array.isArray(n)) return n.forEach(walk);
+    if (n && typeof n === 'object') {
+      const p = pointFrom(n);
+      if (p) out.push(p); else Object.values(n).forEach(walk);
+    }
+  })(json);
+  return out;
+}
+function bucketHours(pts, ref){
+  const acc = Array.from({ length: 24 }, () => ({ ex: [], inc: [] }));
+  for (const p of pts) {
+    const end = p.to && p.to > p.from ? p.to.getTime() : p.from.getTime() + 1;
+    let n = 0;
+    for (let t = p.from.getTime(); t < end && n < 1000; t += 3600000, n++) {
+      const { date, hour } = localDH(new Date(t));
+      if (date !== ref) continue;
+      if (p.ex != null) acc[hour].ex.push(p.ex);
+      if (p.inc != null) acc[hour].inc.push(p.inc);
+    }
+  }
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  return acc.map(h => ({ ex: avg(h.ex), inc: avg(h.inc) }));
+}
+const pickVat = h => state.vat === 'inc' ? (h.inc ?? h.ex) : (h.ex ?? h.inc);
+
+/* ---------- diagram ---------- */
+function chartHtml(values, unit, nowHour){
+  const nums = values.filter(v => v != null);
+  const max = nums.length ? Math.max(...nums) : 0;
+  const bars = values.map((v, h) => {
+    const cls = ['bar', v == null ? 'none' : (v === 0 ? 'zero' : ''), h === nowHour ? 'now' : ''].join(' ');
+    const hgt = v == null || max <= 0 ? 0 : Math.max(0, v / max * 100);
+    const tip = `${pad(h)}:00–${pad((h + 1) % 24)}:00 · ${v == null ? 'inget pris' : nf(v, 3) + ' ' + unit}`;
+    return `<div class="${cls}" style="--h:${hgt}%" title="${esc(tip)}"></div>`;
+  }).join('');
+  const axis = values.map((_, h) => `<span>${h % 3 === 0 ? pad(h) : ''}</span>`).join('');
+  const list = values.map((v, h) => `<span>${pad(h)}–${pad((h + 1) % 24)} <b>${v == null ? '–' : nf(v, 3)}</b></span>`).join('');
+  return `<div class="chart" role="img" aria-label="Pris per timme">${bars}</div><div class="axis">${axis}</div>
+    <details><summary>Visa värden per timme</summary><div class="hours">${list}</div></details>`;
+}
+function statsHtml(values, unit){
+  const idx = values.map((v, h) => [v, h]).filter(([v]) => v != null);
+  if (!idx.length) return '';
+  const min = idx.reduce((a, b) => b[0] < a[0] ? b : a), max = idx.reduce((a, b) => b[0] > a[0] ? b : a);
+  const avg = idx.reduce((s, [v]) => s + v, 0) / idx.length;
+  return `<span>Lägst ${nf(min[0], 3)} (kl ${pad(min[1])}) · Högst ${nf(max[0], 3)} (kl ${pad(max[1])}) · Snitt ${nf(avg, 3)} ${esc(unit)}</span>`;
+}
+
+/* ---------- kort ---------- */
+const DIRS = { consumption: 'Förbrukning (uttag)', production: 'Inmatning (produktion)' };
+const STATUS = { active: ['Gäller', 'ok'], upcoming: ['Kommande', 'warn'], expired: ['Utgången', ''] };
+function tariffStatus(t, date){
+  const f = d10(t.validPeriod?.fromIncluding), e = d10(t.validPeriod?.toExcluding);
+  if (f && date < f) return 'upcoming';
+  if (e && date >= e) return 'expired';
+  return 'active';
+}
+const priceOf = c => c?.price ? (state.vat === 'inc' ? c.price.priceIncVat : c.price.priceExVat) : null;
+const sec = (title, inner) => inner ? `<div class="sec"><h4>${title}</h4>${inner}</div>` : '';
+
+let dynJobs = [];
+function card(t, pats){
+  const st = tariffStatus(t, state.date);
+  const ref = clampDate(state.date, t.validPeriod);
+  const valid = c => inPeriod(ref, c.validPeriod);
+  const [stLabel, stCls] = STATUS[st];
+  const tariffPeriod = d10(t.validPeriod?.fromIncluding) + d10(t.validPeriod?.toExcluding);
+
+  // fast avgift
+  const fixed = (t.fixedPrice?.components || []).filter(valid).map(c => {
+    const v = priceOf(c);
+    if (v == null) return `<div class="row"><span>${esc(c.name)}</span><span class="val">–</span></div>`;
+    const per = c.pricedPeriod;
+    const main = per === 'P1Y' ? `${nf(v, 2)} kr/år` : per === 'P1M' ? `${nf(v, 2)} kr/mån` : `${nf(v, 2)} kr${per ? ' / ' + esc(per) : ''}`;
+    const sub = per === 'P1Y' ? `<small>≈ ${nf(v / 12, 0)} kr/mån</small>` : '';
+    return `<div class="row"><span>${esc(c.name)}</span><span class="val">${main}${sub}</span></div>`;
+  }).join('');
+
+  // energi
+  const energyComps = (t.energyPrice?.components || []).filter(valid);
+  let energy = energyComps.map(c => {
+    const v = priceOf(c);
+    const txt = v == null ? '–' : (c.unit === 'kWh' || !c.unit) ? `${nf(v * 100, 2)} öre/kWh` : `${nf(v, 3)} kr/${esc(c.unit)}`;
+    return `<div class="row"><span>${esc(c.name)}</span><span class="val">${txt}</span></div>`;
+  }).join('');
+  if (energyComps.length > 1 && energyComps.every(c => priceOf(c) != null && (c.unit === 'kWh' || !c.unit))) {
+    energy += `<div class="row sum"><span>Summa</span><span class="val">${nf(energyComps.reduce((s, c) => s + priceOf(c), 0) * 100, 2)} öre/kWh</span></div>`;
+  }
+
+  // effekt
+  const power = (t.powerPrice?.components || []).filter(valid);
+  const peaks = power.filter(c => c.type !== 'dynamic');
+  const dyns = power.filter(c => c.type === 'dynamic');
+  let powerHtml = peaks.map(c => {
+    const v = priceOf(c);
+    const own = periodText(c.validPeriod);
+    const showOwn = own && (d10(c.validPeriod?.fromIncluding) + d10(c.validPeriod?.toExcluding)) !== tariffPeriod;
+    return `<div class="row"><span>${esc(c.name)}<span class="sub">${esc(scheduleText(c))}${showOwn ? ' · ' + esc(own) : ''}</span></span>
+      <span class="val">${v == null ? '–' : nf(v, 2) + ' kr/' + esc(c.unit || 'kW') + '/mån'}</span></div>`;
+  }).join('');
+  const n0 = peaks[0]?.peakIdentificationSettings?.numberOfPeaksForAverageCalculation;
+  if (peaks.length) powerHtml += `<p class="hint">${n0 > 1 ? `Debiteras på snittet av de ${n0} högsta timmarna (olika dygn) per månad.` : 'Debiteras på högsta timmedeleffekten per månad.'}</p>`;
+  if (peaks.length && peaks.some(c => !isFlat(c))) {
+    const vals = Array.from({ length: 24 }, (_, h) => { const c = peaks.find(c => activeAt(c, ref, h, pats)); return c ? priceOf(c) : null; });
+    const holiday = patMatch('holidays', ref, pats) ? ' · helgdag' : '';
+    const nowH = ref === today() ? localDH(new Date()).hour : -1;
+    powerHtml += `<div class="chart-title"><span><b>Effektavgift per timme</b> · ${esc(dateLabel(ref))}${holiday}</span><span>kr/kW/mån</span></div>${chartHtml(vals, 'kr/kW/mån', nowH)}`;
+  }
+  for (const c of dyns) {
+    const id = 'dyn-' + dynJobs.length;
+    dynJobs.push({ id, comp: c, ref, tariff: t });
+    powerHtml += `<div class="chart-title"><span><b>${esc(c.name || 'Timpris')}</b> · ${esc(dateLabel(ref))}</span><span>${esc(c.unit || '')}</span></div><div id="${id}" class="hint">Hämtar timpriser…</div>`;
+  }
+
+  const note = ref !== state.date ? `<div class="note">Tariffen gäller inte ${esc(state.date)} – visar priser för ${esc(ref)}.</div>` : '';
+  return `<article class="card ${st === 'expired' ? 'expired' : ''}">
+    <h3>${esc(t.name)}</h3>
+    <div class="badges"><span class="badge ${stCls}">${stLabel}</span><span class="badge code">${esc(t.product)}</span>${t.billingPeriod === 'P1M' ? '<span class="badge">Debiteras månadsvis</span>' : ''}</div>
+    <p class="meta">Giltig ${esc(periodText(t.validPeriod))}${t.published ? ' · publicerad ' + esc(d10(t.published)) : ''}</p>
+    ${t.description ? `<p class="desc">${esc(t.description)}</p>` : ''}
+    ${note}
+    ${sec('Fast avgift', fixed)}${sec('Energi', energy)}${sec('Effekt', powerHtml)}
+  </article>`;
+}
+
+async function hydrate(job, token){
+  const el = document.getElementById(job.id);
+  if (!el) return;
+  const fail = (msg, raw) => { if (token === renderToken && el.isConnected) el.innerHTML = `<p class="hint">${msg}</p>` + (raw ? rawDetails(raw) : ''); };
+  try {
+    const json = await fetchPrices(job.comp, job.ref);
+    if (token !== renderToken) return;
+    if (json && json.error) return fail(`Hämtningen av timpriser misslyckades vid senaste körningen: ${esc(json.error)}`);
+    const pts = extractPoints(json);
+    const hours = bucketHours(pts, job.ref).map(pickVat);
+    if (!hours.some(v => v != null)) {
+      const upcoming = tariffStatus(job.tariff, today()) === 'upcoming';
+      return fail(`Inga timpriser publicerade för ${esc(job.ref)}${upcoming ? ` (tariffen börjar gälla ${esc(d10(job.tariff.validPeriod.fromIncluding))})` : ''}.${pts.length ? '' : ' Svaret innehöll inga prispunkter som kunde tolkas.'}`, json);
+    }
+    const unit = (job.comp.unit ? 'kr/' + job.comp.unit : 'kr');
+    const nowH = job.ref === today() ? localDH(new Date()).hour : -1;
+    el.className = '';
+    el.innerHTML = `<div class="chart-title">${statsHtml(hours, unit)}</div>${chartHtml(hours, unit, nowH)}${rawDetails(json)}`;
+  } catch (e) {
+    fail(`Kunde inte hämta timpriser: ${esc(e.message)}`);
+  }
+}
+function rawDetails(json){
+  let s = ''; try { s = JSON.stringify(json, null, 2); } catch {}
+  if (s.length > 20000) s = s.slice(0, 20000) + '\n… (avkortat)';
+  return `<details><summary>Rådata från API:t</summary><pre>${esc(s)}</pre></details>`;
+}
+
+/* ---------- sidan ---------- */
+function renderInfo(){
+  const d = cache[state.env], i = d?.info;
+  const upd = i?.tariffDataLastUpdated ? new Date(i.tariffDataLastUpdated).toLocaleString('sv-SE', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'short' }) : null;
+  $('#info').innerHTML = `<span class="envtag">${state.env.toUpperCase()}</span><span>${esc(HOSTS[state.env])}</span>`
+    + (i ? `<span>${esc(i.operator)}</span><span>API v${esc(i.apiVersion)} · impl. ${esc(i.implementationVersion)}</span>` : '')
+    + (upd ? `<span>Tariffdata uppdaterad ${esc(upd)}</span>` : '')
+    + (d ? `<span>${d.tariffs.length} tariffer</span>` : '');
+  const fetched = SOURCE === 'snapshot' ? manifest?.envs?.[state.env]?.fetchedAt : null;
+  $('#info').innerHTML += SOURCE === 'live' ? '<span>Live via server.py</span>'
+    : fetched ? `<span>Snapshot hämtad ${esc(new Date(fetched).toLocaleString('sv-SE', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'short' }))}</span>` : '';
+}
+function render(){
+  const d = cache[state.env];
+  if (!d) return;
+  renderToken++;
+  dynJobs = [];
+  document.body.className = 'env-' + state.env;
+  renderInfo();
+  const q = state.q.trim().toLowerCase();
+  const order = { active: 0, upcoming: 1, expired: 2 };
+  const list = d.tariffs.filter(t => {
+    const st = tariffStatus(t, state.date);
+    if (state.filter === 'now' && st !== 'active') return false;
+    if (state.filter === 'active' && st === 'expired') return false;
+    return !q || `${t.name} ${t.product} ${t.description || ''}`.toLowerCase().includes(q);
+  }).sort((a, b) => (order[tariffStatus(a, state.date)] - order[tariffStatus(b, state.date)]) || a.name.localeCompare(b.name, 'sv') || a.product.localeCompare(b.product));
+  if (!list.length) {
+    $('#list').innerHTML = '<div class="state">Inga tariffer matchar filtret.</div>';
+    return;
+  }
+  const groups = {};
+  list.forEach(t => (groups[t.direction] ||= []).push(t));
+  const keys = Object.keys(groups).sort((a, b) => (a === 'consumption' ? -1 : b === 'consumption' ? 1 : 0));
+  $('#list').innerHTML = keys.map(k => `<h2 class="group">${esc(DIRS[k] || k)} · ${groups[k].length}</h2><div class="grid">${groups[k].map(t => card(t, d.patterns)).join('')}</div>`).join('');
+  const token = renderToken;
+  dynJobs.forEach(j => hydrate(j, token));
+}
+
+/* ---------- händelser ---------- */
+function syncControls(){
+  document.querySelectorAll('[data-env]').forEach(b => b.setAttribute('aria-pressed', b.dataset.env === state.env));
+  document.querySelectorAll('[data-vat]').forEach(b => b.setAttribute('aria-pressed', b.dataset.vat === state.vat));
+  $('#date').value = state.date;
+  $('#filter').value = state.filter;
+  document.body.className = 'env-' + state.env;
+}
+document.querySelectorAll('[data-env]').forEach(b => b.onclick = () => {
+  if (state.env === b.dataset.env) return;
+  state.env = b.dataset.env; store.set('env', state.env); syncControls(); load();
+});
+document.querySelectorAll('[data-vat]').forEach(b => b.onclick = () => {
+  state.vat = b.dataset.vat; store.set('vat', state.vat); syncControls(); render();
+});
+const setDate = d => { if (/^\d{4}-\d{2}-\d{2}$/.test(d)) { state.date = d; syncControls(); render(); } };
+$('#date').onchange = e => setDate(e.target.value);
+$('#prev').onclick = () => setDate(addDays(state.date, -1));
+$('#next').onclick = () => setDate(addDays(state.date, 1));
+$('#todayBtn').onclick = () => setDate(today());
+$('#filter').onchange = e => { state.filter = e.target.value; render(); };
+let qTimer;
+$('#q').oninput = e => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.q = e.target.value; render(); }, 150); };
+$('#refresh').onclick = () => load(true);
+
+syncControls();
+load();
+</script>
+</body>
+</html>
