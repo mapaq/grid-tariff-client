@@ -1,0 +1,59 @@
+name: Test and publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 * * * *"   # varje timme, minut 17 (undviker timskiftets kö)
+  workflow_dispatch:        # manuell körning från fliken Actions
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Python-tester (hämtarskriptet)
+        run: python -m unittest discover -s tests -v
+      - name: Sidtester (index.html, snapshot- och live-läge)
+        run: node tests/page.test.js
+
+  deploy:
+    # Publicerar bara från main (push, schema, manuell körning) – aldrig för pull requests.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Hämta tariffdata (UAT + Prod)
+        run: python scripts/fetch_data.py --out _site/data
+      - name: Bygg sajten
+        run: cp index.html _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
