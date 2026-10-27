@@ -8,6 +8,7 @@
 :root{
   --bg:#f5f7f9; --surface:#ffffff; --text:#15202b; --muted:#5b6978; --line:#e1e6eb;
   --accent:#0b6bcb; --bar:#0b6bcb; --bar-low:#9db4cc;
+  --actual:#0b6bcb; --preview:#c25e00;
   --ok:#14703f; --ok-soft:#e1f3e8; --warn:#8a5700; --warn-soft:#fcefd0; --gray:#566371; --gray-soft:#e9edf1;
   --env:#14703f;
 }
@@ -15,6 +16,7 @@
   :root{
     --bg:#0e1317; --surface:#161d23; --text:#e8edf1; --muted:#95a3b0; --line:#28323b;
     --accent:#5aa7f0; --bar:#5aa7f0; --bar-low:#3b566f;
+    --actual:#5aa7f0; --preview:#f0a94a;
     --ok:#5cc88e; --ok-soft:#14301f; --warn:#e8b64f; --warn-soft:#352a10; --gray:#a3b0bb; --gray-soft:#222b33;
     --env:#5cc88e;
   }
@@ -72,6 +74,19 @@ h2.group{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(
 .bar{background:var(--bar);border-radius:2px 2px 0 0;min-height:2px;height:var(--h)}
 .bar.zero,.bar.none{background:var(--bar-low);opacity:.55}
 .bar.now{outline:2px solid var(--text);outline-offset:1px}
+.bar.actual{background:var(--actual)}
+/* preview: streckad fyllning + ram, så skillnaden syns även utan färgseende */
+.bar.preview{background:repeating-linear-gradient(135deg,var(--preview) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 1.5px var(--preview)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;margin:8px 0 0;font-size:12px;color:var(--text)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend .sw{display:inline-block;width:14px;height:14px;border-radius:3px;flex:none}
+.legend .sw.actual{background:var(--actual)}
+.legend .sw.preview{background:repeating-linear-gradient(135deg,var(--preview) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 1.5px var(--preview)}
+.legend .sw.plain{background:var(--bar)}
+.legend small{color:var(--muted)}
+.daynav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 0}
+.daynav .btn{padding:4px 10px;font-size:13px}
+.daynav .d{font-weight:600;font-size:13px;text-align:center;flex:1}
 .axis{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;font-size:10px;color:var(--muted);text-align:center;margin-top:2px}
 details{margin-top:6px;font-size:12px;color:var(--muted)}
 details summary{cursor:pointer}
@@ -312,6 +327,18 @@ function fetchPrices(c, date){
   return priceCache.get(key);
 }
 // Tolerant tolkning av /prices-svaret: letar upp objekt med starttid + pris var de än ligger.
+// Typ av pris: "actual" = faktiskt satt och beslutat pris, "preview" = prognos/gissning som kan ändras.
+// Hittas som strängvärde (valfritt fältnamn), som boolean (isPreview: true) eller som gruppnyckel ({ actual: [...], preview: [...] }).
+const KINDS = [['actual', /^actual$/i], ['preview', /^(preview|prelim\w*|forecast\w*|estimate\w*|prognos\w*)$/i]];
+const kindFromString = v => { if (typeof v !== 'string') return null; for (const [k, re] of KINDS) if (re.test(v.trim())) return k; return null; };
+function kindOfObject(o){
+  for (const [key, v] of Object.entries(o)) {
+    const k = kindFromString(v);
+    if (k) return k;
+    if (typeof v === 'boolean' && v) { const kk = kindFromString(key.replace(/^(is|has)_?/i, '')); if (kk) return kk; }
+  }
+  return o.price && typeof o.price === 'object' && !Array.isArray(o.price) ? kindOfObject(o.price) : null;
+}
 function pointFrom(o){
   const vp = o.validPeriod || o.period || o;
   const from = vp.fromIncluding ?? vp.from ?? vp.start ?? vp.startTime ?? o.timestamp ?? o.time;
@@ -325,48 +352,64 @@ function pointFrom(o){
   const f = new Date(from);
   if (isNaN(f)) return null;
   const t = to ? new Date(to) : null;
-  return { from: f, to: t && !isNaN(t) ? t : null, ex: ex ?? null, inc: inc ?? null };
+  return { from: f, to: t && !isNaN(t) ? t : null, ex: ex ?? null, inc: inc ?? null, kind: null };
 }
 function extractPoints(json){
   const out = [];
-  (function walk(n){
-    if (Array.isArray(n)) return n.forEach(walk);
+  (function walk(n, kind){
+    if (Array.isArray(n)) return n.forEach(x => walk(x, kind));
     if (n && typeof n === 'object') {
+      const k = kindOfObject(n) || kind;
       const p = pointFrom(n);
-      if (p) out.push(p); else Object.values(n).forEach(walk);
+      if (p) { p.kind = k; out.push(p); }
+      else Object.entries(n).forEach(([key, v]) => walk(v, kindFromString(key) || k));
     }
-  })(json);
+  })(json, null);
   return out;
 }
 function bucketHours(pts, ref){
-  const acc = Array.from({ length: 24 }, () => ({ ex: [], inc: [] }));
+  const acc = Array.from({ length: 24 }, () => []);
   for (const p of pts) {
     const end = p.to && p.to > p.from ? p.to.getTime() : p.from.getTime() + 1;
     let n = 0;
     for (let t = p.from.getTime(); t < end && n < 1000; t += 3600000, n++) {
       const { date, hour } = localDH(new Date(t));
       if (date !== ref) continue;
-      if (p.ex != null) acc[hour].ex.push(p.ex);
-      if (p.inc != null) acc[hour].inc.push(p.inc);
+      acc[hour].push(p);
     }
   }
-  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
-  return acc.map(h => ({ ex: avg(h.ex), inc: avg(h.inc) }));
+  const avg = a => { a = a.filter(v => v != null); return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null; };
+  return acc.map(ps => {
+    // finns både actual och preview för samma timme gäller actual
+    const use = ps.some(p => p.kind === 'actual') ? ps.filter(p => p.kind === 'actual') : ps;
+    const kind = use.length ? (use.every(p => p.kind === use[0].kind) ? use[0].kind : null) : null;
+    return { ex: avg(use.map(p => p.ex)), inc: avg(use.map(p => p.inc)), kind };
+  });
 }
 const pickVat = h => state.vat === 'inc' ? (h.inc ?? h.ex) : (h.ex ?? h.inc);
 
 /* ---------- diagram ---------- */
-function chartHtml(values, unit, nowHour){
+const KIND_LABEL = { actual: 'Actual (beslutat pris)', preview: 'Preview (prognos)' };
+function legendHtml(hours){
+  const has = hours.filter(h => h.ex != null || h.inc != null);
+  const n = k => has.filter(h => h.kind === k).length;
+  if (!has.some(h => h.kind)) return '<p class="hint">Svaret anger inte om priserna är actual eller preview, så alla timmar visas i samma färg.</p>';
+  const item = (k, txt) => `<span><i class="sw ${k}"></i><b>${txt}</b> <small>${n(k) ? n(k) + ' tim' : 'inga denna dag'}</small></span>`;
+  const other = has.filter(h => !h.kind).length;
+  return `<div class="legend" aria-label="Förklaring">${item('actual', 'Actual – faktiskt satt, beslutat pris')}${item('preview', 'Preview – prognos, kan ändras')}${other ? `<span><i class="sw plain"></i><b>Okänd typ</b> <small>${other} tim</small></span>` : ''}</div>`;
+}
+function chartHtml(values, unit, nowHour, kinds){
   const nums = values.filter(v => v != null);
   const max = nums.length ? Math.max(...nums) : 0;
   const bars = values.map((v, h) => {
-    const cls = ['bar', v == null ? 'none' : (v === 0 ? 'zero' : ''), h === nowHour ? 'now' : ''].join(' ');
+    const kind = v == null ? null : kinds?.[h];
+    const cls = ['bar', v == null ? 'none' : (v === 0 ? 'zero' : ''), kind || '', h === nowHour ? 'now' : ''].join(' ');
     const hgt = v == null || max <= 0 ? 0 : Math.max(0, v / max * 100);
-    const tip = `${pad(h)}:00–${pad((h + 1) % 24)}:00 · ${v == null ? 'inget pris' : nf(v, 3) + ' ' + unit}`;
+    const tip = `${pad(h)}:00–${pad((h + 1) % 24)}:00 · ${v == null ? 'inget pris' : nf(v, 3) + ' ' + unit}${kind ? ' · ' + KIND_LABEL[kind] : ''}`;
     return `<div class="${cls}" style="--h:${hgt}%" title="${esc(tip)}"></div>`;
   }).join('');
   const axis = values.map((_, h) => `<span>${h % 3 === 0 ? pad(h) : ''}</span>`).join('');
-  const list = values.map((v, h) => `<span>${pad(h)}–${pad((h + 1) % 24)} <b>${v == null ? '–' : nf(v, 3)}</b></span>`).join('');
+  const list = values.map((v, h) => `<span>${pad(h)}–${pad((h + 1) % 24)} <b>${v == null ? '–' : nf(v, 3)}</b>${v != null && kinds?.[h] ? ` <small>${kinds[h] === 'preview' ? 'preview' : 'actual'}</small>` : ''}</span>`).join('');
   return `<div class="chart" role="img" aria-label="Pris per timme">${bars}</div><div class="axis">${axis}</div>
     <details><summary>Visa värden per timme</summary><div class="hours">${list}</div></details>`;
 }
@@ -441,7 +484,9 @@ function card(t, pats){
   for (const c of dyns) {
     const id = 'dyn-' + dynJobs.length;
     dynJobs.push({ id, comp: c, ref, tariff: t });
-    powerHtml += `<div class="chart-title"><span><b>${esc(c.name || 'Timpris')}</b> · ${esc(dateLabel(ref))}</span><span>${esc(c.unit || '')}</span></div><div id="${id}" class="hint">Hämtar timpriser…</div>`;
+    powerHtml += `<div class="chart-title"><span><b>${esc(c.name || 'Timpris')}</b></span><span>${esc(c.unit || '')}</span></div>
+      <div class="daynav"><button type="button" class="btn" data-step="-1" data-from="${esc(ref)}" aria-label="Föregående dag">‹ Förra dagen</button><span class="d">${esc(dateLabel(ref))}</span><button type="button" class="btn" data-step="1" data-from="${esc(ref)}" aria-label="Nästa dag">Nästa dag ›</button></div>
+      <div id="${id}" class="hint">Hämtar timpriser…</div>`;
   }
 
   const note = ref !== state.date ? `<div class="note">Tariffen gäller inte ${esc(state.date)} – visar priser för ${esc(ref)}.</div>` : '';
@@ -464,7 +509,9 @@ async function hydrate(job, token){
     if (token !== renderToken) return;
     if (json && json.error) return fail(`Hämtningen av timpriser misslyckades vid senaste körningen: ${esc(json.error)}`);
     const pts = extractPoints(json);
-    const hours = bucketHours(pts, job.ref).map(pickVat);
+    const hourObjs = bucketHours(pts, job.ref);
+    const hours = hourObjs.map(h => { const v = pickVat(h); return v == null ? null : v; });
+    const kinds = hourObjs.map(h => h.kind);
     if (!hours.some(v => v != null)) {
       const upcoming = tariffStatus(job.tariff, today()) === 'upcoming';
       return fail(`Inga timpriser publicerade för ${esc(job.ref)}${upcoming ? ` (tariffen börjar gälla ${esc(d10(job.tariff.validPeriod.fromIncluding))})` : ''}.${pts.length ? '' : ' Svaret innehöll inga prispunkter som kunde tolkas.'}`, json);
@@ -472,7 +519,7 @@ async function hydrate(job, token){
     const unit = (job.comp.unit ? 'kr/' + job.comp.unit : 'kr');
     const nowH = job.ref === today() ? localDH(new Date()).hour : -1;
     el.className = '';
-    el.innerHTML = `<div class="chart-title">${statsHtml(hours, unit)}</div>${chartHtml(hours, unit, nowH)}${rawDetails(json)}`;
+    el.innerHTML = `<div class="chart-title">${statsHtml(hours, unit)}</div>${legendHtml(hourObjs)}${chartHtml(hours, unit, nowH, kinds)}${rawDetails(json)}`;
   } catch (e) {
     fail(`Kunde inte hämta timpriser: ${esc(e.message)}`);
   }
@@ -546,6 +593,17 @@ $('#filter').onchange = e => { state.filter = e.target.value; render(); };
 let qTimer;
 $('#q').oninput = e => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.q = e.target.value; render(); }, 150); };
 $('#refresh').onclick = () => load(true);
+// bläddra dag för dag direkt i timpriskorten, och med piltangenterna
+$('#list').onclick = e => {
+  const b = e.target && e.target.closest ? e.target.closest('[data-step]') : null;
+  if (b) setDate(addDays(b.dataset.from || state.date, +b.dataset.step));
+};
+document.onkeydown = e => {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName || '')) return;
+  if (e.key === 'ArrowLeft') setDate(addDays(state.date, -1));
+  else if (e.key === 'ArrowRight') setDate(addDays(state.date, 1));
+};
 
 syncControls();
 load();
