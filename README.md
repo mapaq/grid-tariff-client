@@ -66,9 +66,9 @@ If the site stops updating, re-enable the workflow in the Actions tab (or push a
 
 ## Data and disclaimer
 
-The tariff data belongs to the respective grid company and is fetched from their API. The API is in a development phase;
-the data is not legally binding. Always verify prices with the grid company. The MIT license covers this code only,
-not the data.
+This is a private open source project and is not affiliated with Göteborg Energi or any other grid company.
+The data is fetched from the grid company's public API, which follows the [Eltariff-API](https://github.com/RI-SE/Eltariff-API)
+standard. Always verify prices and tariffs directly with the source. The MIT license covers this code only, not the data.
 
 ## License
 
