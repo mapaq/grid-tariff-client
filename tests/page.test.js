@@ -62,9 +62,13 @@ function pricesFor(date, shape) {
     const from = `${date}T${String(h).padStart(2, '0')}:00:00+01:00`;
     const to = h === 23 ? `${date}T23:59:59+01:00` : `${date}T${String(h + 1).padStart(2, '0')}:00:00+01:00`;
     const ex = 0.1 + (h >= 17 && h <= 20 ? 0.5 : 0) + h * 0.001;
-    if (shape === 'flat') pts.push({ fromIncluding: from, toExcluding: to, price: { priceExVat: ex, priceIncVat: ex * 1.25 } });
+    const kind = h < 14 ? 'actual' : 'preview';
+    if (shape === 'typed') pts.push({ componentId: 'c', priceType: kind, validPeriod: { fromIncluding: from, toExcluding: to }, price: price(ex) });
+    else if (shape === 'grouped') pts.push({ kind, pt: { validPeriod: { fromIncluding: from, toExcluding: to }, price: price(ex) } });
+    else if (shape === 'flat') pts.push({ fromIncluding: from, toExcluding: to, price: { priceExVat: ex, priceIncVat: ex * 1.25 } });
     else pts.push({ componentId: 'c', validPeriod: { fromIncluding: from, toExcluding: to }, price: price(ex) });
   }
+  if (shape === 'grouped') return { actual: pts.filter(x => x.kind === 'actual').map(x => x.pt), preview: pts.filter(x => x.kind === 'preview').map(x => x.pt) };
   return shape === 'flat' ? pts : { prices: pts };
 }
 
@@ -148,6 +152,26 @@ async function suite(mode) {
   ok(count(get('#dyn-0').innerHTML, /class="bar /g) === 24, 'tolkar även platt lista med punkter');
   run(`setDate('2026-12-05')`); await sleep(200);
   ok(get('#dyn-0').innerHTML.includes('Inga timpriser publicerade'), 'datum utan priser => tydligt meddelande');
+
+  // actual (beslutat) vs preview (prognos)
+  run(`setDate('2026-10-26')`); pricesShape = 'nested'; run(`priceCache.clear(); render()`); await sleep(200);
+  let d1 = get('#dyn-0').innerHTML;
+  ok(!d1.includes('class="legend"') && d1.includes('anger inte om priserna är actual eller preview'), 'utan typ i svaret: ingen färgsättning, tydlig notis');
+  for (const shape of ['typed', 'grouped']) {
+    pricesShape = shape; run(`priceCache.clear(); setDate('2026-12-01')`); await sleep(200);
+    d1 = get('#dyn-0').innerHTML;
+    ok(count(d1, /class="bar [^"]*\bactual\b/g) === 14 && count(d1, /class="bar [^"]*\bpreview\b/g) === 10, `${shape}: 14 timmar actual + 10 timmar preview`);
+    ok(d1.includes('class="legend"') && d1.includes('Actual – faktiskt satt, beslutat pris') && d1.includes('Preview – prognos, kan ändras') && d1.includes('14 tim') && d1.includes('10 tim'), `${shape}: teckenruta med förklaring och antal timmar`);
+    ok(d1.includes('Preview (prognos)') && d1.includes('Actual (beslutat pris)'), `${shape}: tooltip anger typ per timme`);
+  }
+  const card1 = cardOf(get('#list').innerHTML, 'GN6KWST');
+  ok(card1.includes('data-step="-1"') && card1.includes('data-step="1"') && card1.includes('data-from="2026-12-01"'), 'timpriskortet har bläddringsknappar för föregående/nästa dag');
+  get('#list').onclick({ target: { closest: () => ({ dataset: { step: '1', from: '2026-12-01' } }) } }); await sleep(200);
+  ok(run('state.date') === '2026-12-02', 'knappen "nästa dag" flyttar fram ett dygn');
+  ctx.document.onkeydown({ key: 'ArrowLeft', target: { tagName: 'BODY' } }); await sleep(100);
+  ok(run('state.date') === '2026-12-01', 'piltangent vänster går bakåt ett dygn');
+  ctx.document.onkeydown({ key: 'ArrowRight', target: { tagName: 'INPUT' } });
+  ok(run('state.date') === '2026-12-01', 'piltangenter ignoreras i inmatningsfält');
 
   if (mode === 'snapshot') {
     run(`state.env='uat'; load()`); await sleep(200);
