@@ -73,6 +73,7 @@ function pricesFor(date, shape) {
 }
 
 /* ---------- testkörning per läge ---------- */
+const DAY = '2026-11-20';   // priser finns publicerade för en dag FÖRE tariffens start (2026-12-01)
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const count = (s, re) => (s.match(re) || []).length;
 const cardOf = (listHtml, product) => listHtml.split('<article').find(c => c.includes(`>${product}<`)) || '';
@@ -98,7 +99,7 @@ async function suite(mode) {
         if (url === 'data/manifest.json') return reply(200, manifest);
         if (url === 'data/prod/tariffs.json') return reply(200, { tariffs, calendarPatterns });
         if (url === 'data/prod/info.json') return reply(200, info);
-        if (url === 'data/prod/prices/GN6KWST.json') return reply(200, pricesFor('2026-12-01', pricesShape));
+        if (url === 'data/prod/prices/GN6KWST.json') return reply(200, pricesFor(DAY, pricesShape));
         return reply(404, { error: 'nope' });
       }
       if (url === 'data/manifest.json') return reply(404, { error: 'nope' });
@@ -106,7 +107,7 @@ async function suite(mode) {
       if (url === '/api/prod/info') return reply(200, info);
       if (url.startsWith('/api/prod/prices?')) {
         const q = new URLSearchParams(url.split('?')[1]);
-        return reply(200, q.get('date') === '2026-12-01' ? pricesFor('2026-12-01', pricesShape) : { prices: [] });
+        return reply(200, q.get('date') === DAY ? pricesFor(DAY, pricesShape) : { prices: [] });
       }
       return reply(404, { error: 'nope' });
     },
@@ -124,11 +125,19 @@ async function suite(mode) {
   ok(gnm.includes('23 öre/kWh') && gnm.includes('68 öre/kWh'), 'energi 23 öre + summa 68 öre/kWh');
   ok(gnm.includes('49 kr/kW/mån') && !gnm.includes('class="chart"'), 'platt effektavgift 49 kr/kW/mån utan diagram');
   const st = cardOf(list, 'GN6KWST');
-  ok(st.includes('Kommande') && st.includes('visar priser för 2026-12-01'), 'timpris-tariff markeras Kommande och klampas till 2026-12-01');
-  const d0 = get('#dyn-0').innerHTML;
-  ok(count(d0, /class="bar /g) === 24 && d0.includes('Högst'), 'timpris-diagram med 24 staplar + statistik');
-  const wantUrl = mode === 'snapshot' ? 'data/prod/prices/GN6KWST.json' : '/api/prod/prices?product=GN6KWST&date=2026-12-01';
+  ok(st.includes('Kommande') && st.includes('avgifterna visas för 2026-12-01') && st.includes('Tariffen börjar gälla 2026-12-01'), 'timpris-tariff markeras Kommande, avgifter klampas till 2026-12-01 och timpriser visas för valt datum');
+  let d0 = get('#dyn-0').innerHTML;
+  ok(d0.includes('Inga timpriser för 2026-10-26') && (mode === 'live' || (d0.includes('Servern har priser för 2026-11-20') && d0.includes('data-goto="2026-11-20"'))), 'datum utan priser: tydligt meddelande' + (mode === 'snapshot' ? ' + hopp till dagen som har priser' : ''));
+  if (mode === 'snapshot') {
+    get('#list').onclick({ target: { closest: sel => sel === '[data-goto]' ? { dataset: { goto: '2026-11-20' } } : null } }); await sleep(200);
+    ok(run('state.date') === DAY, 'hoppknappen går till första dagen med priser');
+  } else { run(`setDate('${DAY}')`); await sleep(200); }
+  d0 = get('#dyn-0').innerHTML;
+  ok(count(d0, /class="bar /g) === 24 && d0.includes('Högst'), 'timpris-diagram visas för dag före tariffens start (24 staplar + statistik)');
+  ok(cardOf(get('#list').innerHTML, 'GN6KWST').includes('Tariffen börjar gälla 2026-12-01') && cardOf(get('#list').innerHTML, 'GN6KWST').includes('gäller alltså inte än'), 'kortet säger tydligt att tariffen inte börjat gälla');
+  const wantUrl = mode === 'snapshot' ? 'data/prod/prices/GN6KWST.json' : `/api/prod/prices?product=GN6KWST&date=${DAY}`;
   ok(fetchLog.includes(wantUrl), `hämtar ${wantUrl}`);
+  run(`setDate('2026-10-26')`); await sleep(100);
   ok(get('#info').innerHTML.includes(mode === 'snapshot' ? 'Snapshot hämtad' : 'Live via server.py'), 'inforaden visar datakälla');
   let g6 = cardOf(list, 'GN6KW');
   ok(!g6.includes('class="chart"') && g6.includes('0 kr/kW/mån'), 'sommar (okt): enbart "låg" 0 kr/kW, inget diagram');
@@ -148,30 +157,30 @@ async function suite(mode) {
   ok(nbsp(cardOf(get('#list').innerHTML, 'GNM63')).includes('1 968 kr/år'), 'exkl moms: 1 968 kr/år');
   run(`state.vat='inc'`);
 
-  pricesShape = 'flat'; run(`priceCache.clear(); render()`); await sleep(200);
+  run(`setDate('${DAY}')`); pricesShape = 'flat'; run(`priceCache.clear(); render()`); await sleep(200);
   ok(count(get('#dyn-0').innerHTML, /class="bar /g) === 24, 'tolkar även platt lista med punkter');
-  run(`setDate('2026-12-05')`); await sleep(200);
-  ok(get('#dyn-0').innerHTML.includes('Inga timpriser publicerade'), 'datum utan priser => tydligt meddelande');
+  run(`setDate('2026-11-25')`); await sleep(200);
+  ok(get('#dyn-0').innerHTML.includes('Inga timpriser för 2026-11-25'), 'dag efter publicerade priser => tydligt meddelande');
 
   // actual (beslutat) vs preview (prognos)
-  run(`setDate('2026-10-26')`); pricesShape = 'nested'; run(`priceCache.clear(); render()`); await sleep(200);
+  run(`setDate('${DAY}')`); pricesShape = 'nested'; run(`priceCache.clear(); render()`); await sleep(200);
   let d1 = get('#dyn-0').innerHTML;
   ok(!d1.includes('class="legend"') && d1.includes('anger inte om priserna är actual eller preview'), 'utan typ i svaret: ingen färgsättning, tydlig notis');
   for (const shape of ['typed', 'grouped']) {
-    pricesShape = shape; run(`priceCache.clear(); setDate('2026-12-01')`); await sleep(200);
+    pricesShape = shape; run(`priceCache.clear(); setDate('${DAY}')`); await sleep(200);
     d1 = get('#dyn-0').innerHTML;
     ok(count(d1, /class="bar [^"]*\bactual\b/g) === 14 && count(d1, /class="bar [^"]*\bpreview\b/g) === 10, `${shape}: 14 timmar actual + 10 timmar preview`);
     ok(d1.includes('class="legend"') && d1.includes('Actual – faktiskt satt, beslutat pris') && d1.includes('Preview – prognos, kan ändras') && d1.includes('14 tim') && d1.includes('10 tim'), `${shape}: teckenruta med förklaring och antal timmar`);
     ok(d1.includes('Preview (prognos)') && d1.includes('Actual (beslutat pris)'), `${shape}: tooltip anger typ per timme`);
   }
   const card1 = cardOf(get('#list').innerHTML, 'GN6KWST');
-  ok(card1.includes('data-step="-1"') && card1.includes('data-step="1"') && card1.includes('data-from="2026-12-01"'), 'timpriskortet har bläddringsknappar för föregående/nästa dag');
-  get('#list').onclick({ target: { closest: () => ({ dataset: { step: '1', from: '2026-12-01' } }) } }); await sleep(200);
-  ok(run('state.date') === '2026-12-02', 'knappen "nästa dag" flyttar fram ett dygn');
+  ok(card1.includes('data-step="-1"') && card1.includes('data-step="1"') && card1.includes(`data-from="${DAY}"`), 'timpriskortet har bläddringsknappar för föregående/nästa dag');
+  get('#list').onclick({ target: { closest: sel => sel === '[data-step]' ? { dataset: { step: '1', from: DAY } } : null } }); await sleep(200);
+  ok(run('state.date') === '2026-11-21', 'knappen "nästa dag" flyttar fram ett dygn');
   ctx.document.onkeydown({ key: 'ArrowLeft', target: { tagName: 'BODY' } }); await sleep(100);
-  ok(run('state.date') === '2026-12-01', 'piltangent vänster går bakåt ett dygn');
+  ok(run('state.date') === DAY, 'piltangent vänster går bakåt ett dygn');
   ctx.document.onkeydown({ key: 'ArrowRight', target: { tagName: 'INPUT' } });
-  ok(run('state.date') === '2026-12-01', 'piltangenter ignoreras i inmatningsfält');
+  ok(run('state.date') === DAY, 'piltangenter ignoreras i inmatningsfält');
 
   if (mode === 'snapshot') {
     run(`state.env='uat'; load()`); await sleep(200);

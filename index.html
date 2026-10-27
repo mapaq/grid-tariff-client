@@ -367,6 +367,12 @@ function extractPoints(json){
   })(json, null);
   return out;
 }
+// Första och sista dygn (lokal tid) som svaret innehåller priser för.
+function priceRange(pts){
+  if (!pts.length) return null;
+  const days = pts.flatMap(p => [localDH(p.from).date, localDH(new Date((p.to && p.to > p.from ? p.to.getTime() : p.from.getTime() + 1) - 1)).date]).sort();
+  return { first: days[0], last: days[days.length - 1] };
+}
 function bucketHours(pts, ref){
   const acc = Array.from({ length: 24 }, () => []);
   for (const p of pts) {
@@ -483,13 +489,17 @@ function card(t, pats){
   }
   for (const c of dyns) {
     const id = 'dyn-' + dynJobs.length;
-    dynJobs.push({ id, comp: c, ref, tariff: t });
+    const dd = state.date;   // timpriser visas för valt datum, även om tariffen inte gäller då
+    dynJobs.push({ id, comp: c, ref: dd, tariff: t });
+    const stD = tariffStatus(t, dd);
+    const validity = stD === 'upcoming' ? `<div class="note">Tariffen börjar gälla ${esc(d10(t.validPeriod.fromIncluding))}. Priserna för ${esc(dd)} gäller alltså inte än.</div>`
+      : stD === 'expired' ? `<div class="note">Tariffen gick ut ${esc(addDays(d10(t.validPeriod.toExcluding), -1))}. Priserna för ${esc(dd)} gäller inte längre.</div>` : '';
     powerHtml += `<div class="chart-title"><span><b>${esc(c.name || 'Timpris')}</b></span><span>${esc(c.unit || '')}</span></div>
-      <div class="daynav"><button type="button" class="btn" data-step="-1" data-from="${esc(ref)}" aria-label="Föregående dag">‹ Förra dagen</button><span class="d">${esc(dateLabel(ref))}</span><button type="button" class="btn" data-step="1" data-from="${esc(ref)}" aria-label="Nästa dag">Nästa dag ›</button></div>
-      <div id="${id}" class="hint">Hämtar timpriser…</div>`;
+      <div class="daynav"><button type="button" class="btn" data-step="-1" data-from="${esc(dd)}" aria-label="Föregående dag">‹ Förra dagen</button><span class="d">${esc(dateLabel(dd))}</span><button type="button" class="btn" data-step="1" data-from="${esc(dd)}" aria-label="Nästa dag">Nästa dag ›</button></div>
+      ${validity}<div id="${id}" class="hint">Hämtar timpriser…</div>`;
   }
 
-  const note = ref !== state.date ? `<div class="note">Tariffen gäller inte ${esc(state.date)} – visar priser för ${esc(ref)}.</div>` : '';
+  const note = ref !== state.date ? `<div class="note">Tariffen gäller inte ${esc(state.date)} – avgifterna visas för ${esc(ref)}${dyns.length ? '; timpriser visas för valt datum' : ''}.</div>` : '';
   return `<article class="card ${st === 'expired' ? 'expired' : ''}">
     <h3>${esc(t.name)}</h3>
     <div class="badges"><span class="badge ${stCls}">${stLabel}</span><span class="badge code">${esc(t.product)}</span>${t.billingPeriod === 'P1M' ? '<span class="badge">Debiteras månadsvis</span>' : ''}</div>
@@ -513,8 +523,10 @@ async function hydrate(job, token){
     const hours = hourObjs.map(h => { const v = pickVat(h); return v == null ? null : v; });
     const kinds = hourObjs.map(h => h.kind);
     if (!hours.some(v => v != null)) {
-      const upcoming = tariffStatus(job.tariff, today()) === 'upcoming';
-      return fail(`Inga timpriser publicerade för ${esc(job.ref)}${upcoming ? ` (tariffen börjar gälla ${esc(d10(job.tariff.validPeriod.fromIncluding))})` : ''}.${pts.length ? '' : ' Svaret innehöll inga prispunkter som kunde tolkas.'}`, json);
+      const r = priceRange(pts);
+      const jump = (d, label) => `<button type="button" class="btn" data-goto="${esc(d)}">${label} ${esc(d)}</button>`;
+      const where = r ? `Servern har priser för ${esc(r.first)}${r.last !== r.first ? ' – ' + esc(r.last) : ''}. ` + [job.ref > r.first ? jump(r.first, 'Gå till första dagen') : '', job.ref < r.last ? jump(r.last, 'Gå till sista dagen') : ''].filter(Boolean).join(' ') : '';
+      return fail(`Inga timpriser för ${esc(job.ref)}.${pts.length ? '' : ' Svaret innehöll inga prispunkter som kunde tolkas.'} ${where}`, json);
     }
     const unit = (job.comp.unit ? 'kr/' + job.comp.unit : 'kr');
     const nowH = job.ref === today() ? localDH(new Date()).hour : -1;
@@ -595,7 +607,10 @@ $('#q').oninput = e => { clearTimeout(qTimer); qTimer = setTimeout(() => { state
 $('#refresh').onclick = () => load(true);
 // bläddra dag för dag direkt i timpriskorten, och med piltangenterna
 $('#list').onclick = e => {
-  const b = e.target && e.target.closest ? e.target.closest('[data-step]') : null;
+  const c = e.target && e.target.closest ? e.target : null;
+  const g = c && c.closest('[data-goto]');
+  if (g) return setDate(g.dataset.goto);
+  const b = c && c.closest('[data-step]');
   if (b) setDate(addDays(b.dataset.from || state.date, +b.dataset.step));
 };
 document.onkeydown = e => {
