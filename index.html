@@ -77,6 +77,11 @@ h2.group{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(
 .bar.actual{background:var(--actual)}
 /* preview: streckad fyllning + ram, så skillnaden syns även utan färgseende */
 .bar.preview{background:repeating-linear-gradient(135deg,var(--preview) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 1.5px var(--preview)}
+.src{font-size:11px;line-height:1.5;color:var(--muted);background:var(--gray-soft);border-left:3px solid var(--env);border-radius:4px;padding:6px 8px;margin:6px 0 0;word-break:break-all}
+.src code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text)}
+.src .envtag{margin-right:4px}
+details.raw{margin-top:10px}
+details.raw>summary{font-weight:600;color:var(--text)}
 .legend{display:flex;flex-wrap:wrap;gap:4px 16px;margin:8px 0 0;font-size:12px;color:var(--text)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend .sw{display:inline-block;width:14px;height:14px;border-radius:3px;flex:none}
@@ -312,7 +317,7 @@ async function load(force = false){
 function pricePath(c, date){
   const u = new URL(c.url || '/prices', 'http://x');
   if (!c.url) u.searchParams.set('componentId', c.id);
-  u.searchParams.set('date', date);
+  if (date) u.searchParams.set('date', date);
   return u.pathname.replace(/^\/+/, '').replace(/^gridtariff\/v0\//, '') + '?' + u.searchParams.toString();
 }
 function fetchPrices(c, date){
@@ -507,13 +512,14 @@ function card(t, pats){
     ${t.description ? `<p class="desc">${esc(t.description)}</p>` : ''}
     ${note}
     ${sec('Fast avgift', fixed)}${sec('Energi', energy)}${sec('Effekt', powerHtml)}
+    ${tariffRawDetails(t)}
   </article>`;
 }
 
 async function hydrate(job, token){
   const el = document.getElementById(job.id);
   if (!el) return;
-  const fail = (msg, raw) => { if (token === renderToken && el.isConnected) el.innerHTML = `<p class="hint">${msg}</p>` + (raw ? rawDetails(raw) : ''); };
+  const fail = (msg, raw) => { if (token === renderToken && el.isConnected) el.innerHTML = `<p class="hint">${msg}</p>` + (raw ? rawDetails(raw, job) : ''); };
   try {
     const json = await fetchPrices(job.comp, job.ref);
     if (token !== renderToken) return;
@@ -531,15 +537,37 @@ async function hydrate(job, token){
     const unit = (job.comp.unit ? 'kr/' + job.comp.unit : 'kr');
     const nowH = job.ref === today() ? localDH(new Date()).hour : -1;
     el.className = '';
-    el.innerHTML = `<div class="chart-title">${statsHtml(hours, unit)}</div>${legendHtml(hourObjs)}${chartHtml(hours, unit, nowH, kinds)}${rawDetails(json)}`;
+    el.innerHTML = `<div class="chart-title">${statsHtml(hours, unit)}</div>${legendHtml(hourObjs)}${chartHtml(hours, unit, nowH, kinds)}${rawDetails(json, job)}`;
   } catch (e) {
     fail(`Kunde inte hämta timpriser: ${esc(e.message)}`);
   }
 }
-function rawDetails(json){
+const fmtTime = iso => new Date(iso).toLocaleString('sv-SE', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'short' });
+// Vilket anrop rådatat kommer från: miljö, GET-adress mot Göteborg Energi, och hur sidan fick svaret (snapshot-fil eller live).
+function sourceHtml({ endpoint, file, part }){
+  const env = state.env;
+  const fetched = SOURCE === 'snapshot' ? manifest?.envs?.[env]?.fetchedAt : null;
+  const how = SOURCE === 'snapshot'
+    ? `Snapshot${fetched ? ' hämtad ' + esc(fmtTime(fetched)) : ''} · lagrad i filen <code>${esc(file)}</code>`
+    : 'Hämtad live via server.py';
+  return `<div class="src"><span class="envtag">${esc(env.toUpperCase())}</span><b>Källa:</b> <code>GET https://${esc(HOSTS[env])}/gridtariff/v0/${esc(endpoint)}</code>`
+    + (part ? `<br>${part}` : '') + `<br>${how}</div>`;
+}
+function preJson(json){
   let s = ''; try { s = JSON.stringify(json, null, 2); } catch {}
   if (s.length > 20000) s = s.slice(0, 20000) + '\n… (avkortat)';
-  return `<details><summary>Rådata från API:t</summary><pre>${esc(s)}</pre></details>`;
+  return `<pre>${esc(s)}</pre>`;
+}
+// Rådata för timpriser (/prices)
+function rawDetails(json, job){
+  const src = sourceHtml({ endpoint: pricePath(job.comp, SOURCE === 'snapshot' ? null : job.ref), file: `data/${state.env}/prices/${priceKey(job.comp)}.json` });
+  return `<details class="raw"><summary>Rådata · timpriser (från /prices)</summary>${src}${preJson(json)}</details>`;
+}
+// Rådata för själva tariffobjektet (/tariffs)
+function tariffRawDetails(t){
+  const idx = cache[state.env].tariffs.indexOf(t);
+  const part = `Visar objektet <code>tariffs[${idx}]</code> (produkt <code>${esc(t.product)}</code>, id <code>${esc(t.id)}</code>) ur svaret. Kalendermönster (<code>calendarPatterns</code>) ligger på toppnivå i svaret, utanför objektet.`;
+  return `<details class="raw"><summary>Rådata · tariffobjekt (från /tariffs)</summary>${sourceHtml({ endpoint: 'tariffs', file: `data/${state.env}/tariffs.json`, part })}${preJson(t)}</details>`;
 }
 
 /* ---------- sidan ---------- */
