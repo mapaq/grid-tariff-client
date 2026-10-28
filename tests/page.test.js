@@ -124,6 +124,12 @@ async function suite(mode) {
   ok(nbsp(gnm).includes('2 460 kr/år') && gnm.includes('205 kr/mån'), 'fast avgift inkl moms: 2 460 kr/år (205 kr/mån)');
   ok(gnm.includes('23 öre/kWh') && gnm.includes('68 öre/kWh'), 'energi 23 öre + summa 68 öre/kWh');
   ok(gnm.includes('49 kr/kW/mån') && !gnm.includes('class="chart"'), 'platt effektavgift 49 kr/kW/mån utan diagram');
+  // rådata för tariffobjektet (/tariffs) med tydlig källa
+  const how = mode === 'snapshot' ? 'Snapshot hämtad' : 'Hämtad live via server.py';
+  ok(gnm.includes('Rådata · tariffobjekt (från /tariffs)') && gnm.includes('GET https://api.goteborgenergi.cloud/gridtariff/v0/tariffs') && gnm.includes('tariffs[1]') && gnm.includes(how), 'tariffkortet har rådatavy med källa (endpoint, objektindex, ' + (mode === 'snapshot' ? 'snapshot' : 'live') + ')');
+  ok(mode === 'live' || gnm.includes('data/prod/tariffs.json'), 'snapshot: anger filen data/prod/tariffs.json');
+  ok(gnm.includes('&quot;product&quot;: &quot;GNM63&quot;') && gnm.includes('&quot;validPeriod&quot;'), 'rådatat är hela tariffobjektet som JSON');
+  ok(count(list, /Rådata · tariffobjekt/g) === count(list, /<article/g), 'varje tariffkort har en rådatavy');
   const st = cardOf(list, 'GN6KWST');
   ok(st.includes('Kommande') && st.includes('avgifterna visas för 2026-12-01') && st.includes('Tariffen börjar gälla 2026-12-01'), 'timpris-tariff markeras Kommande, avgifter klampas till 2026-12-01 och timpriser visas för valt datum');
   let d0 = get('#dyn-0').innerHTML;
@@ -135,6 +141,9 @@ async function suite(mode) {
   d0 = get('#dyn-0').innerHTML;
   ok(count(d0, /class="bar /g) === 24 && d0.includes('Högst'), 'timpris-diagram visas för dag före tariffens start (24 staplar + statistik)');
   ok(cardOf(get('#list').innerHTML, 'GN6KWST').includes('Tariffen börjar gälla 2026-12-01') && cardOf(get('#list').innerHTML, 'GN6KWST').includes('gäller alltså inte än'), 'kortet säger tydligt att tariffen inte börjat gälla');
+  const rawP = get('#dyn-0').innerHTML;
+  ok(rawP.includes('Rådata · timpriser (från /prices)') && rawP.includes('GET https://api.goteborgenergi.cloud/gridtariff/v0/prices?product=GN6KWST' + (mode === 'live' ? '&amp;date=' + DAY : '')) && rawP.includes(how), 'timpris-rådatat anger källa (/prices-anrop' + (mode === 'live' ? ' med datum' : ', snapshot') + ')');
+  ok(mode === 'live' || rawP.includes('data/prod/prices/GN6KWST.json'), 'snapshot: anger prisfilen');
   const wantUrl = mode === 'snapshot' ? 'data/prod/prices/GN6KWST.json' : `/api/prod/prices?product=GN6KWST&date=${DAY}`;
   ok(fetchLog.includes(wantUrl), `hämtar ${wantUrl}`);
   run(`setDate('2026-10-26')`); await sleep(100);
