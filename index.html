@@ -11,6 +11,7 @@
   --actual:#0b6bcb; --preview:#c25e00;
   --ok:#14703f; --ok-soft:#e1f3e8; --warn:#8a5700; --warn-soft:#fcefd0; --gray:#566371; --gray-soft:#e9edf1;
   --env:#14703f;
+  --cons:#0b5cad; --cons-soft:#e0eefc; --prod:#6b3fa0; --prod-soft:#efe6fa;
 }
 @media (prefers-color-scheme: dark){
   :root{
@@ -19,6 +20,7 @@
     --actual:#5aa7f0; --preview:#f0a94a;
     --ok:#5cc88e; --ok-soft:#14301f; --warn:#e8b64f; --warn-soft:#352a10; --gray:#a3b0bb; --gray-soft:#222b33;
     --env:#5cc88e;
+    --cons:#7bb8f5; --cons-soft:#14283b; --prod:#c3a1ec; --prod-soft:#2a1d3b;
   }
 }
 body.env-uat{--env:#b26a00}
@@ -48,7 +50,6 @@ input[type=search]{width:190px}
 .envtag{font-weight:650;color:var(--env)}
 
 main{max-width:1160px;margin:0 auto;padding:16px}
-h2.group{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:22px 0 10px;font-weight:650}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,430px),1fr));gap:14px;align-items:start}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .card.expired{opacity:.7}
@@ -57,6 +58,8 @@ h2.group{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(
 .badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--gray-soft);color:var(--gray)}
 .badge.ok{background:var(--ok-soft);color:var(--ok)}
 .badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.cons{background:var(--cons-soft);color:var(--cons)}
+.badge.prod{background:var(--prod-soft);color:var(--prod)}
 .badge.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:500}
 .meta{font-size:12px;color:var(--muted);margin:4px 0 0}
 .desc{font-size:13px;color:var(--muted);margin:6px 0 0}
@@ -433,7 +436,9 @@ function statsHtml(values, unit){
 }
 
 /* ---------- kort ---------- */
-const DIRS = { consumption: 'Förbrukning (uttag)', production: 'Inmatning (produktion)' };
+const DIRS = { consumption: ['Förbrukning', 'Förbrukning (uttag)', 'cons'], production: ['Inmatning', 'Inmatning (produktion)', 'prod'] };
+const dirRank = d => d === 'consumption' ? 0 : d === 'production' ? 2 : 1;   // inmatning sist
+const dirBadge = d => { const [l, title, cls] = DIRS[d] || [d || 'Okänd riktning', d || '', '']; return `<span class="badge ${cls}" title="${esc(title)}">${esc(l)}</span>`; };
 const STATUS = { active: ['Gäller', 'ok'], upcoming: ['Kommande', 'warn'], expired: ['Utgången', ''] };
 function tariffStatus(t, date){
   const f = d10(t.validPeriod?.fromIncluding), e = d10(t.validPeriod?.toExcluding);
@@ -507,7 +512,7 @@ function card(t, pats){
   const note = ref !== state.date ? `<div class="note">Tariffen gäller inte ${esc(state.date)} – avgifterna visas för ${esc(ref)}${dyns.length ? '; timpriser visas för valt datum' : ''}.</div>` : '';
   return `<article class="card ${st === 'expired' ? 'expired' : ''}">
     <h3>${esc(t.name)}</h3>
-    <div class="badges"><span class="badge ${stCls}">${stLabel}</span><span class="badge code">${esc(t.product)}</span>${t.billingPeriod === 'P1M' ? '<span class="badge">Debiteras månadsvis</span>' : ''}</div>
+    <div class="badges"><span class="badge ${stCls}">${stLabel}</span>${dirBadge(t.direction)}<span class="badge code">${esc(t.product)}</span>${t.billingPeriod === 'P1M' ? '<span class="badge">Debiteras månadsvis</span>' : ''}</div>
     <p class="meta">Giltig ${esc(periodText(t.validPeriod))}${t.published ? ' · publicerad ' + esc(d10(t.published)) : ''}</p>
     ${t.description ? `<p class="desc">${esc(t.description)}</p>` : ''}
     ${note}
@@ -596,15 +601,12 @@ function render(){
     if (state.filter === 'now' && st !== 'active') return false;
     if (state.filter === 'active' && st === 'expired') return false;
     return !q || `${t.name} ${t.product} ${t.description || ''}`.toLowerCase().includes(q);
-  }).sort((a, b) => (order[tariffStatus(a, state.date)] - order[tariffStatus(b, state.date)]) || a.name.localeCompare(b.name, 'sv') || a.product.localeCompare(b.product));
+  }).sort((a, b) => (dirRank(a.direction) - dirRank(b.direction)) || (order[tariffStatus(a, state.date)] - order[tariffStatus(b, state.date)]) || a.name.localeCompare(b.name, 'sv') || a.product.localeCompare(b.product));
   if (!list.length) {
     $('#list').innerHTML = '<div class="state">Inga tariffer matchar filtret.</div>';
     return;
   }
-  const groups = {};
-  list.forEach(t => (groups[t.direction] ||= []).push(t));
-  const keys = Object.keys(groups).sort((a, b) => (a === 'consumption' ? -1 : b === 'consumption' ? 1 : 0));
-  $('#list').innerHTML = keys.map(k => `<h2 class="group">${esc(DIRS[k] || k)} · ${groups[k].length}</h2><div class="grid">${groups[k].map(t => card(t, d.patterns)).join('')}</div>`).join('');
+  $('#list').innerHTML = `<div class="grid">${list.map(t => card(t, d.patterns)).join('')}</div>`;
   const token = renderToken;
   dynJobs.forEach(j => hydrate(j, token));
 }

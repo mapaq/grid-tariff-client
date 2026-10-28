@@ -119,7 +119,9 @@ async function suite(mode) {
   let list = get('#list').innerHTML;
   ok(run('SOURCE') === mode, `datakälla identifierad som ${mode}`);
   ok(!list.includes('1 776'), 'utgången 2025-tariff döljs i standardfiltret');
-  ok(list.includes('Förbrukning (uttag)') && list.includes('Inmatning (produktion)'), 'grupperar förbrukning/inmatning');
+  ok(!list.includes('class="group"') && count(list, /class="grid"/g) === 1, 'inga grupprubriker: ett enda rutnät');
+  ok(cardOf(list, 'GNM63').includes('>Förbrukning</span>') && cardOf(list, 'GN6KW').includes('>Förbrukning</span>') && cardOf(list, 'GNSPAT').includes('>Inmatning</span>'), 'varje kort har en etikett för förbrukning/inmatning');
+  ok(list.indexOf('>GNSPAT<') > list.indexOf('>GN6KWST<') && list.indexOf('>GNSPAT<') > list.indexOf('>GNM63<'), 'inmatning sorteras sist, även om den inte är sist på namn/status');
   const gnm = cardOf(list, 'GNM63');
   ok(nbsp(gnm).includes('2 460 kr/år') && gnm.includes('205 kr/mån'), 'fast avgift inkl moms: 2 460 kr/år (205 kr/mån)');
   ok(gnm.includes('23 öre/kWh') && gnm.includes('68 öre/kWh'), 'energi 23 öre + summa 68 öre/kWh');
