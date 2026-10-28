@@ -11,6 +11,7 @@
   --actual:#0b6bcb; --preview:#c25e00;
   --ok:#14703f; --ok-soft:#e1f3e8; --warn:#8a5700; --warn-soft:#fcefd0; --gray:#566371; --gray-soft:#e9edf1;
   --env:#14703f;
+  --cons:#0b5cad; --cons-soft:#e0eefc; --prod:#6b3fa0; --prod-soft:#efe6fa;
 }
 @media (prefers-color-scheme: dark){
   :root{
@@ -19,6 +20,7 @@
     --actual:#5aa7f0; --preview:#f0a94a;
     --ok:#5cc88e; --ok-soft:#14301f; --warn:#e8b64f; --warn-soft:#352a10; --gray:#a3b0bb; --gray-soft:#222b33;
     --env:#5cc88e;
+    --cons:#7bb8f5; --cons-soft:#14283b; --prod:#c3a1ec; --prod-soft:#2a1d3b;
   }
 }
 body.env-uat{--env:#b26a00}
@@ -48,7 +50,6 @@ input[type=search]{width:190px}
 .envtag{font-weight:650;color:var(--env)}
 
 main{max-width:1160px;margin:0 auto;padding:16px}
-h2.group{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:22px 0 10px;font-weight:650}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,430px),1fr));gap:14px;align-items:start}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .card.expired{opacity:.7}
@@ -57,6 +58,8 @@ h2.group{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(
 .badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--gray-soft);color:var(--gray)}
 .badge.ok{background:var(--ok-soft);color:var(--ok)}
 .badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.cons{background:var(--cons-soft);color:var(--cons)}
+.badge.prod{background:var(--prod-soft);color:var(--prod)}
 .badge.code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:500}
 .meta{font-size:12px;color:var(--muted);margin:4px 0 0}
 .desc{font-size:13px;color:var(--muted);margin:6px 0 0}
@@ -70,8 +73,13 @@ h2.group{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(
 .row.sum{border-top:1px dashed var(--line);margin-top:3px;padding-top:5px;font-weight:600}
 .hint{font-size:12px;color:var(--muted);margin:4px 0 0}
 .chart-title{font-size:12px;color:var(--muted);margin:8px 0 0;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.chart{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;align-items:end;height:84px;margin-top:6px;border-bottom:1px solid var(--line)}
-.bar{background:var(--bar);border-radius:2px 2px 0 0;min-height:2px;height:var(--h)}
+.chart{position:relative;display:grid;grid-template-columns:repeat(24,1fr);gap:2px;height:var(--ch,84px);margin-top:6px}
+.chart.signed{--ch:130px}
+.cell{position:relative}
+.zline{position:absolute;left:0;right:0;bottom:var(--z,0%);border-top:1px solid var(--muted);pointer-events:none}
+.zlabel{position:absolute;left:2px;bottom:calc(var(--z,0%) + 2px);font-size:10px;color:var(--muted);pointer-events:none}
+.bar{position:absolute;left:0;right:0;bottom:var(--b,0%);height:var(--h);background:var(--bar);border-radius:2px 2px 0 0;min-height:2px}
+.bar.neg{border-radius:0 0 2px 2px}
 .bar.zero,.bar.none{background:var(--bar-low);opacity:.55}
 .bar.now{outline:2px solid var(--text);outline-offset:1px}
 .bar.actual{background:var(--actual)}
@@ -163,6 +171,8 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad = n => String(n).padStart(2, '0');
 const nf = (v, max = 2, min = 0) => new Intl.NumberFormat('sv-SE', { maximumFractionDigits: max, minimumFractionDigits: min }).format(v);
+// Pris med minst 3 värdesiffror, så att små värden (t.ex. -0,000239) inte avrundas till 0.
+const nfp = v => nf(v, v === 0 || !isFinite(v) ? 0 : Math.min(8, Math.max(3, 2 - Math.floor(Math.log10(Math.abs(v))))));
 const store = {
   get(k){ try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v){ try { localStorage.setItem(k, v); } catch {} }
@@ -411,17 +421,22 @@ function legendHtml(hours){
 }
 function chartHtml(values, unit, nowHour, kinds){
   const nums = values.filter(v => v != null);
-  const max = nums.length ? Math.max(...nums) : 0;
-  const bars = values.map((v, h) => {
+  const top = Math.max(0, ...nums), bottom = Math.min(0, ...nums);   // skalan alltid med noll, så negativa priser hänger under nollinjen
+  const range = top - bottom;
+  const signed = bottom < 0;
+  const z = range > 0 ? -bottom / range * 100 : 0;                  // nollinjens avstånd från botten, i procent
+  const cells = values.map((v, h) => {
     const kind = v == null ? null : kinds?.[h];
-    const cls = ['bar', v == null ? 'none' : (v === 0 ? 'zero' : ''), kind || '', h === nowHour ? 'now' : ''].join(' ');
-    const hgt = v == null || max <= 0 ? 0 : Math.max(0, v / max * 100);
-    const tip = `${pad(h)}:00–${pad((h + 1) % 24)}:00 · ${v == null ? 'inget pris' : nf(v, 3) + ' ' + unit}${kind ? ' · ' + KIND_LABEL[kind] : ''}`;
-    return `<div class="${cls}" style="--h:${hgt}%" title="${esc(tip)}"></div>`;
+    const cls = ['bar', v == null ? 'none' : (v === 0 ? 'zero' : ''), kind || '', v != null && v < 0 ? 'neg' : '', h === nowHour ? 'now' : ''].join(' ');
+    const hgt = v == null || range <= 0 ? 0 : Math.abs(v) / range * 100;
+    const b = v != null && v < 0 ? Math.max(0, z - hgt) : z;        // negativa staplar växer nedåt från nollinjen
+    const tip = `${pad(h)}:00–${pad((h + 1) % 24)}:00 · ${v == null ? 'inget pris' : nfp(v) + ' ' + unit}${kind ? ' · ' + KIND_LABEL[kind] : ''}`;
+    return `<div class="cell" title="${esc(tip)}"><div class="${cls}" style="--h:${hgt}%;--b:${b}%"></div></div>`;
   }).join('');
   const axis = values.map((_, h) => `<span>${h % 3 === 0 ? pad(h) : ''}</span>`).join('');
-  const list = values.map((v, h) => `<span>${pad(h)}–${pad((h + 1) % 24)} <b>${v == null ? '–' : nf(v, 3)}</b>${v != null && kinds?.[h] ? ` <small>${kinds[h] === 'preview' ? 'preview' : 'actual'}</small>` : ''}</span>`).join('');
-  return `<div class="chart" role="img" aria-label="Pris per timme">${bars}</div><div class="axis">${axis}</div>
+  const list = values.map((v, h) => `<span>${pad(h)}–${pad((h + 1) % 24)} <b>${v == null ? '–' : nfp(v)}</b>${v != null && kinds?.[h] ? ` <small>${kinds[h] === 'preview' ? 'preview' : 'actual'}</small>` : ''}</span>`).join('');
+  const note = signed ? `<p class="hint">${nums.every(v => v <= 0) ? 'Alla priser är negativa' : 'Negativa priser visas under nollinjen'} (${esc(unit)}).</p>` : '';
+  return `${note}<div class="chart${signed ? ' signed' : ''}" style="--z:${z}%" role="img" aria-label="Pris per timme">${cells}<div class="zline"></div>${signed ? '<span class="zlabel">0</span>' : ''}</div><div class="axis">${axis}</div>
     <details><summary>Visa värden per timme</summary><div class="hours">${list}</div></details>`;
 }
 function statsHtml(values, unit){
@@ -429,11 +444,13 @@ function statsHtml(values, unit){
   if (!idx.length) return '';
   const min = idx.reduce((a, b) => b[0] < a[0] ? b : a), max = idx.reduce((a, b) => b[0] > a[0] ? b : a);
   const avg = idx.reduce((s, [v]) => s + v, 0) / idx.length;
-  return `<span>Lägst ${nf(min[0], 3)} (kl ${pad(min[1])}) · Högst ${nf(max[0], 3)} (kl ${pad(max[1])}) · Snitt ${nf(avg, 3)} ${esc(unit)}</span>`;
+  return `<span>Lägst ${nfp(min[0])} (kl ${pad(min[1])}) · Högst ${nfp(max[0])} (kl ${pad(max[1])}) · Snitt ${nfp(avg)} ${esc(unit)}</span>`;
 }
 
 /* ---------- kort ---------- */
-const DIRS = { consumption: 'Förbrukning (uttag)', production: 'Inmatning (produktion)' };
+const DIRS = { consumption: ['Förbrukning', 'Förbrukning (uttag)', 'cons'], production: ['Inmatning', 'Inmatning (produktion)', 'prod'] };
+const dirRank = d => d === 'consumption' ? 0 : d === 'production' ? 2 : 1;   // inmatning sist
+const dirBadge = d => { const [l, title, cls] = DIRS[d] || [d || 'Okänd riktning', d || '', '']; return `<span class="badge ${cls}" title="${esc(title)}">${esc(l)}</span>`; };
 const STATUS = { active: ['Gäller', 'ok'], upcoming: ['Kommande', 'warn'], expired: ['Utgången', ''] };
 function tariffStatus(t, date){
   const f = d10(t.validPeriod?.fromIncluding), e = d10(t.validPeriod?.toExcluding);
@@ -507,7 +524,7 @@ function card(t, pats){
   const note = ref !== state.date ? `<div class="note">Tariffen gäller inte ${esc(state.date)} – avgifterna visas för ${esc(ref)}${dyns.length ? '; timpriser visas för valt datum' : ''}.</div>` : '';
   return `<article class="card ${st === 'expired' ? 'expired' : ''}">
     <h3>${esc(t.name)}</h3>
-    <div class="badges"><span class="badge ${stCls}">${stLabel}</span><span class="badge code">${esc(t.product)}</span>${t.billingPeriod === 'P1M' ? '<span class="badge">Debiteras månadsvis</span>' : ''}</div>
+    <div class="badges"><span class="badge ${stCls}">${stLabel}</span>${dirBadge(t.direction)}<span class="badge code">${esc(t.product)}</span>${t.billingPeriod === 'P1M' ? '<span class="badge">Debiteras månadsvis</span>' : ''}</div>
     <p class="meta">Giltig ${esc(periodText(t.validPeriod))}${t.published ? ' · publicerad ' + esc(d10(t.published)) : ''}</p>
     ${t.description ? `<p class="desc">${esc(t.description)}</p>` : ''}
     ${note}
@@ -596,15 +613,12 @@ function render(){
     if (state.filter === 'now' && st !== 'active') return false;
     if (state.filter === 'active' && st === 'expired') return false;
     return !q || `${t.name} ${t.product} ${t.description || ''}`.toLowerCase().includes(q);
-  }).sort((a, b) => (order[tariffStatus(a, state.date)] - order[tariffStatus(b, state.date)]) || a.name.localeCompare(b.name, 'sv') || a.product.localeCompare(b.product));
+  }).sort((a, b) => (dirRank(a.direction) - dirRank(b.direction)) || (order[tariffStatus(a, state.date)] - order[tariffStatus(b, state.date)]) || a.name.localeCompare(b.name, 'sv') || a.product.localeCompare(b.product));
   if (!list.length) {
     $('#list').innerHTML = '<div class="state">Inga tariffer matchar filtret.</div>';
     return;
   }
-  const groups = {};
-  list.forEach(t => (groups[t.direction] ||= []).push(t));
-  const keys = Object.keys(groups).sort((a, b) => (a === 'consumption' ? -1 : b === 'consumption' ? 1 : 0));
-  $('#list').innerHTML = keys.map(k => `<h2 class="group">${esc(DIRS[k] || k)} · ${groups[k].length}</h2><div class="grid">${groups[k].map(t => card(t, d.patterns)).join('')}</div>`).join('');
+  $('#list').innerHTML = `<div class="grid">${list.map(t => card(t, d.patterns)).join('')}</div>`;
   const token = renderToken;
   dynJobs.forEach(j => hydrate(j, token));
 }

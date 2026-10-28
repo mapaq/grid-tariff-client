@@ -58,6 +58,17 @@ const manifest = { generatedAt: '2026-10-26T16:00:00+00:00', envs: {
 // /prices-fixture: gissat format (timvisa punkter med validPeriod + price) – tolkningen är tolerant
 function pricesFor(date, shape) {
   const pts = [];
+  if (shape === 'neg-mixed' || shape === 'neg-all') {
+    // riktigt format från inmatningstariffer: platta punkter med start/end/priceExVat/priceIncVat, negativa priser
+    for (let h = 0; h < 24; h++) {
+      const iso = x => `${date}T${String(x % 24).padStart(2, '0')}:00:00+01:00`;
+      let ex = shape === 'neg-all' ? -(0.0002 + h * 0.0001) : (h >= 12 && h <= 20 ? 0.0006 : 0.0001);
+      if (shape === 'neg-mixed' && h === 6) ex = -0.0002388;
+      if (shape === 'neg-mixed' && h === 7) ex = -0.0011919;
+      pts.push({ created: '2026-10-22T14:00:02.946828+02:00', start: iso(h), end: iso(h + 1), priceExVat: ex, priceIncVat: +(ex * 1.25).toFixed(7) });
+    }
+    return pts;
+  }
   for (let h = 0; h < 24; h++) {
     const from = `${date}T${String(h).padStart(2, '0')}:00:00+01:00`;
     const to = h === 23 ? `${date}T23:59:59+01:00` : `${date}T${String(h + 1).padStart(2, '0')}:00:00+01:00`;
@@ -119,7 +130,9 @@ async function suite(mode) {
   let list = get('#list').innerHTML;
   ok(run('SOURCE') === mode, `datakälla identifierad som ${mode}`);
   ok(!list.includes('1 776'), 'utgången 2025-tariff döljs i standardfiltret');
-  ok(list.includes('Förbrukning (uttag)') && list.includes('Inmatning (produktion)'), 'grupperar förbrukning/inmatning');
+  ok(!list.includes('class="group"') && count(list, /class="grid"/g) === 1, 'inga grupprubriker: ett enda rutnät');
+  ok(cardOf(list, 'GNM63').includes('>Förbrukning</span>') && cardOf(list, 'GN6KW').includes('>Förbrukning</span>') && cardOf(list, 'GNSPAT').includes('>Inmatning</span>'), 'varje kort har en etikett för förbrukning/inmatning');
+  ok(list.indexOf('>GNSPAT<') > list.indexOf('>GN6KWST<') && list.indexOf('>GNSPAT<') > list.indexOf('>GNM63<'), 'inmatning sorteras sist, även om den inte är sist på namn/status');
   const gnm = cardOf(list, 'GNM63');
   ok(nbsp(gnm).includes('2 460 kr/år') && gnm.includes('205 kr/mån'), 'fast avgift inkl moms: 2 460 kr/år (205 kr/mån)');
   ok(gnm.includes('23 öre/kWh') && gnm.includes('68 öre/kWh'), 'energi 23 öre + summa 68 öre/kWh');
@@ -182,6 +195,21 @@ async function suite(mode) {
     ok(d1.includes('class="legend"') && d1.includes('Actual – faktiskt satt, beslutat pris') && d1.includes('Preview – prognos, kan ändras') && d1.includes('14 tim') && d1.includes('10 tim'), `${shape}: teckenruta med förklaring och antal timmar`);
     ok(d1.includes('Preview (prognos)') && d1.includes('Actual (beslutat pris)'), `${shape}: tooltip anger typ per timme`);
   }
+  // negativa priser (inmatning): nollinje, staplar nedåt och tillräckligt med decimaler
+  pricesShape = 'neg-mixed'; run(`priceCache.clear(); setDate('${DAY}')`); await sleep(200);
+  let dn = get('#dyn-0').innerHTML;
+  ok(count(dn, /class="bar [^"]*\bneg\b/g) === 2 && dn.includes('class="chart signed"') && dn.includes('class="zline"') && dn.includes('Negativa priser visas under nollinjen'), 'blandade priser: 2 negativa staplar, nollinje och förklaring');
+  ok(dn.includes('06:00–07:00 · −0,000299 kr/kW'), 'små negativa värden avrundas inte till 0 (−0,0002985 → −0,000299)');
+  ok(dn.includes('07:00–08:00 · −0,00149 kr/kW'), 'timmen 07 (ur exemplet): −0,0014899 visas som −0,00149');
+  const zm = +dn.match(/--z:([\d.]+)%/)[1];
+  ok(zm > 0 && zm < 100, `nollinjen ligger mellan botten och toppen (${zm.toFixed(1)} %)`);
+  ok(dn.includes('Lägst −0,00149 (kl 07)'), 'statistiken visar lägsta (negativa) pris');
+  pricesShape = 'neg-all'; run(`priceCache.clear(); setDate('${DAY}')`); await sleep(200);
+  dn = get('#dyn-0').innerHTML;
+  ok(count(dn, /class="bar [^"]*\bneg\b/g) === 24 && dn.includes('--z:100%') && dn.includes('Alla priser är negativa') && dn.includes('--h:100%;--b:0%'), 'bara negativa priser: alla 24 staplar hänger från nollinjen och den lägsta fyller höjden');
+  pricesShape = 'nested'; run(`priceCache.clear(); setDate('${DAY}')`); await sleep(200);
+  ok(!get('#dyn-0').innerHTML.includes('class="chart signed"') && !get('#dyn-0').innerHTML.includes('nollinjen'), 'utan negativa priser: oförändrat diagram utan nollinje-förklaring');
+
   const card1 = cardOf(get('#list').innerHTML, 'GN6KWST');
   ok(card1.includes('data-step="-1"') && card1.includes('data-step="1"') && card1.includes(`data-from="${DAY}"`), 'timpriskortet har bläddringsknappar för föregående/nästa dag');
   get('#list').onclick({ target: { closest: sel => sel === '[data-step]' ? { dataset: { step: '1', from: DAY } } : null } }); await sleep(200);
